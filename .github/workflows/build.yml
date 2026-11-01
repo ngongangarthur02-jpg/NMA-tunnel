@@ -1,1 +1,54 @@
-{"name":"Build NMA Tunnel APK","on":{"push":{"branches":["**"]},"workflow_dispatch":{}},"permissions":{"contents":"write"},"jobs":{"build":{"runs-on":"ubuntu-latest","steps":[{"uses":"actions/checkout@v4"},{"uses":"actions/setup-java@v4","with":{"distribution":"temurin","java-version":17}},{"uses":"gradle/actions/setup-gradle@v4","with":{"gradle-version":"8.9"}},{"name":"Dezipper","run":"unzip -q NMATunnel.zip"},{"name":"Compiler","run":"cd NMATunnel && gradle assembleDebug --no-daemon"},{"name":"Publier","env":{"GH_TOKEN":"${{ github.token }}"},"run":"cp NMATunnel/app/build/outputs/apk/debug/app-debug.apk NMA-Tunnel.apk && gh release create \"apk-${{ github.run_number }}\" NMA-Tunnel.apk --title \"NMA Tunnel build ${{ github.run_number }}\" --notes \"APK debug\""}]}}}
+name: Build NMA Tunnel APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NMA_MASTER_SECRET: ${{ secrets.NMA_MASTER_SECRET }}
+      NMA_ADMIN_PASSWORD: ${{ secrets.NMA_ADMIN_PASSWORD }}
+      NMA_KEYSTORE_B64: ${{ secrets.NMA_KEYSTORE_B64 }}
+      NMA_KEYSTORE_PASSWORD: ${{ secrets.NMA_KEYSTORE_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dézipper le projet
+        run: |
+          if [ -f NMATunnel.zip ]; then
+            rm -rf proj && mkdir proj && unzip -q NMATunnel.zip -d proj
+            echo "PROJ=proj/NMATunnel" >> "$GITHUB_ENV"
+          elif [ -d NMATunnel ]; then
+            echo "PROJ=NMATunnel" >> "$GITHUB_ENV"
+          else
+            echo "PROJ=." >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Compiler l'APK
+        working-directory: ${{ env.PROJ }}
+        run: gradle assembleDebug --no-daemon
+
+      - name: Publier dans Releases
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' "$PROJ/app/build.gradle.kts")
+          cp "$PROJ/app/build/outputs/apk/debug/app-debug.apk" NMA-Tunnel.apk
+          gh release delete "v$VERSION" --yes --cleanup-tag || true
+          gh release create "v$VERSION" NMA-Tunnel.apk --title "NMA Tunnel $VERSION" \
+            --notes "NMA Tunnel version $VERSION" --latest
+            
