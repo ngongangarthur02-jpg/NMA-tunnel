@@ -19,17 +19,32 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Dézipper le projet
         run: |
-          if [ -f NMATunnel.zip ]; then
-            rm -rf proj && mkdir proj && unzip -q NMATunnel.zip -d proj
-            echo "PROJ=proj/NMATunnel" >> "$GITHUB_ENV"
-          elif [ -d NMATunnel ]; then
-            echo "PROJ=NMATunnel" >> "$GITHUB_ENV"
-          else
-            echo "PROJ=." >> "$GITHUB_ENV"
+          echo "Fichiers du dépôt :"; ls -la
+          rm -rf proj && mkdir proj
+          # Prend le zip envoyé en dernier (peu importe son nom : NMATunnel.zip, NMATunnel (1).zip…)
+          BEST=""; BESTT=0
+          for f in *.zip; do
+            [ -f "$f" ] || continue
+            T=$(git log -1 --format=%ct -- "$f" 2>/dev/null || echo 0)
+            if [ -z "$BEST" ] || [ "${T:-0}" -gt "$BESTT" ]; then BEST="$f"; BESTT="${T:-0}"; fi
+          done
+          if [ -n "$BEST" ]; then
+            echo "Zip utilisé : $BEST"
+            unzip -q "$BEST" -d proj
           fi
+          ROOT=$(find proj -maxdepth 4 -name settings.gradle.kts | head -1)
+          if [ -z "$ROOT" ]; then ROOT=$(find . -maxdepth 3 -name settings.gradle.kts -not -path './.git/*' | head -1); fi
+          if [ -z "$ROOT" ]; then
+            echo "ERREUR : projet introuvable. Envoie le fichier NMATunnel.zip à la racine du dépôt."
+            exit 1
+          fi
+          echo "PROJ=$(dirname "$ROOT")" >> "$GITHUB_ENV"
+          echo "Projet : $(dirname "$ROOT")"
 
       - uses: actions/setup-java@v4
         with:
